@@ -1,0 +1,258 @@
+---
+title: "Customer Retention Improvement"
+output: pdf_document
+date: "2023-05-15"
+---
+
+## Read Data, Descriptive Stats, Variables Transformation
+```{r setup, include=FALSE}
+setwd("/Users/tsaiiyu/Desktop/0. Marketing Models/")
+relay <- read.csv("relay.csv", head = TRUE)
+str(relay)
+
+relay$created <- as.numeric(as.Date(relay$created, format="%m/%d/%Y"))
+relay$firstorder <- as.numeric(as.Date(relay$firstorder, format="%m/%d/%Y"))
+relay$lastorder <- as.numeric(as.Date(relay$lastorder, format="%m/%d/%Y"))
+relay$paperless <- as.factor(relay$paperless)
+relay$refill <- as.factor(relay$refill)
+relay$doorstep <- as.factor(relay$doorstep)
+relay$favday <- as.factor(relay$favday)
+relay$duration <- relay$lastorder - relay$created + 1
+relay <- subset(relay, relay$duration > 0)
+relay$cens <- ifelse(relay$retained == 0, 0, 1)
+relay$highesent <- ifelse(relay$esent > 32, 1, 0)
+summary(relay)
+
+relay_1 <- relay[,c(6,7,8)]
+pairs(relay_1)
+cor(relay_1)
+
+hist(relay$retained)
+hist(relay$esent, breaks = 100)
+hist(relay$eopenrate)
+hist(relay$eclickrate)
+hist(relay$avgorder)
+hist(relay$ordfreq, breaks = 100)
+table(relay$favday)
+hist(relay$created)
+hist(relay$firstorder)
+hist(relay$lastorder)
+```
+
+
+## KM Plots
+```{r}
+km0.fit <- survfit(Surv(duration, cens == 0, type = "right") ~ 1, data = relay)
+summary(km0.fit)
+install.packages("survminer")
+library(survminer)
+ggsurvplot(km0.fit, conf.int = TRUE)
+
+## esent
+km1.fit <- survfit(Surv(duration, cens == 0, type = "right") ~ highesent, data = relay)
+summary(km1.fit)
+ggsurvplot(km1.fit, conf.int = TRUE, linetype = "strata")
+
+## paperless
+km2.fit <- survfit(Surv(duration, cens == 0, type = "right") ~ paperless, data = relay)
+summary(km2.fit)
+ggsurvplot(km2.fit, conf.int = TRUE, linetype = "strata")
+
+## refill
+km3.fit <- survfit(Surv(duration, cens == 0, type = "right") ~ refill, data = relay)
+summary(km3.fit)
+ggsurvplot(km3.fit, conf.int = TRUE, linetype = "strata")
+
+## doorstep
+km4.fit <- survfit(Surv(duration, cens == 0, type = "right") ~ doorstep, data = relay)
+summary(km4.fit)
+ggsurvplot(km4.fit, conf.int = TRUE, linetype = "strata")
+```
+
+
+## Binary Dependent Variable: retained (0/1)
+### 1) Linear Probability Model
+```{r}
+fit_lpm <- lm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, family = binomial, relay)
+summary(fit_lpm)
+
+library(car)
+vif(fit_lpm) ## no multicollinearity
+```
+
+
+
+### 2) Logit Regression Model
+```{r}
+fit_logit <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, family = binomial(link = logit), relay)
+summary(fit_logit)
+
+## LRT to test model significane and variables significance
+install.packages("lmtest")
+library(lmtest)
+
+lrtest(fit_logit)
+
+logit_restr1 <- glm(retained ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, family = binomial(link = logit), relay)
+lrtest(logit_restr1, fit_logit) ## esent is significant.
+
+logit_restr2 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, family = binomial(link = logit), relay)
+lrtest(logit_restr2, fit_logit) ## paperless is significant.
+
+logit_restr3 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, family = binomial(link = logit), relay)
+lrtest(logit_restr3, fit_logit) ## refill is significant.
+
+logit_restr4 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, family = binomial(link=logit), relay)
+lrtest(logit_restr4, fit_logit) ## doorstep is not significant.
+```
+
+
+### 3) Probit Regression Model
+```{r}
+fit_probit <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, family = binomial(link = probit), relay)
+summary(fit_probit)
+
+## LRT to test model significane and variables significance
+lrtest(fit_probit)
+
+probit_restr1 <- glm(retained ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, family = binomial(link = probit), relay)
+lrtest(probit_restr1, fit_probit) ## esent is significant.
+
+probit_restr2 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, family = binomial(link = probit), relay)
+lrtest(probit_restr2, fit_probit) ## paperless is significant.
+
+probit_restr3 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, family = binomial(link = probit), relay)
+lrtest(probit_restr3, fit_probit) ## refill is significant.
+
+probit_restr4 <- glm(retained ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, family = binomial(link = probit), relay)
+lrtest(probit_restr4, fit_probit) ## doorstep is not significant.
+```
+
+
+## Right-censored time to event variable: retained duration
+### 1) Weibull Accelerated Failure Time (AFT) Model
+```{r}
+install.packages("survival")
+library(survival)
+
+wei.fit <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "weibull")
+summary(wei.fit)
+
+
+# LRT to test model significane and variables significance
+wei_restr1 <- survreg(Surv(duration, cens == 0, type = "right") ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "weibull")
+lrtest(wei_restr1, wei.fit) ## esent is significant.
+
+wei_restr2 <- survreg(Surv(duration, cens == 0, typ = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, data = relay, dist = "weibull")
+lrtest(wei_restr2, wei.fit) ## paperless is significant.
+
+wei_restr3 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, data = relay, dist = "weibull")
+lrtest(wei_restr3, wei.fit) ## refill is significant.
+
+wei_restr4 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, data = relay, dist = "weibull")
+lrtest(wei_restr4, wei.fit) # doorstep is not significant.
+```
+
+
+### 2) Weibull Proportional Hazard (PH) Model
+```{r}
+p = 1/wei.fit$scale
+p
+wei_ph.beta = (-1)*p*wei.fit$coeff
+wei_ph.beta
+```
+
+
+### 3) Exponential Accelerated Failure Time (AFT) Model
+```{r}
+exp.fit <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "exponential")
+summary(exp.fit)
+
+
+# LRT to test model significance and variables significance
+exp_restr1 <- survreg(Surv(duration, cens == 0, type = "right") ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "exponential")
+lrtest(exp_restr1, exp.fit) ## esent is significant.
+
+exp_restr2 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, data = relay, dist = "exponential")
+lrtest(exp_restr2, exp.fit) ## paperless is significant.
+
+exp_restr3 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, data = relay, dist = "exponential")
+lrtest(exp_restr3, exp.fit) ## refill is significant
+
+exp_restr4 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, data = relay, dist = "exponential")
+lrtest(exp_restr4, exp.fit) ## doorstep is not significant.
+
+```
+
+### 4) Exponential Proportional Hazard (PH) Model
+```{r}
+exp_ph.beta = (-1)*exp.fit$coeff
+exp_ph.beta
+```
+
+### 5) Lognormal Model
+```{r}
+# Lognormal AFT
+logn.fit <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "lognormal")
+summary(logn.fit)
+
+# LRT
+logn_restr1 <- survreg(Surv(duration, cens == 0, type = "right") ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "lognormal")
+lrtest(logn_restr1, logn.fit) ## esent is significant.
+
+logn_restr2 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, data = relay, dist = "lognormal")
+lrtest(logn_restr2, logn.fit) ## paperless is significant.
+
+logn_restr3 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, data = relay, dist = "lognormal")
+lrtest(logn_restr3, logn.fit) ## refill is significant.
+
+logn_restr4 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, data = relay, dist = "lognormal")
+lrtest(logn_restr4, logn.fit) ## doorstep is not significant.
+
+```
+
+
+### 6) Loglogistic AFT model
+```{r}
+loglog.fit <- survreg(formula = Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate+1) + log(eclickrate+1) + log(avgorder+1) + log(ordfreq+1) + paperless + refill + doorstep + favday, data = relay, dist = "loglogistic")
+summary(loglog.fit)
+
+# LRT
+loglog_restr1 <- survreg(Surv(duration, cens == 0, type = "right") ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay, dist = "loglogistic")
+lrtest(loglog_restr1, loglog.fit) ## esent is significant.
+
+loglog_restr2 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + refill + doorstep + favday, data = relay, dist = "loglogistic")
+lrtest(loglog_restr2, loglog.fit) ## paperless is significant.
+
+loglog_restr3 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, data = relay, dist = "loglogistic")
+lrtest(loglog_restr3, loglog.fit) ## refill is significant.
+
+loglog_restr4 <- survreg(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, data = relay, dist = "loglogistic") 
+lrtest(loglog_restr4, loglog.fit) ## doorstep is not significant.
+```
+
+
+### 7) Cox PH Model
+```{r}
+# Cox PH
+cox.fit <- coxph(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay)
+summary(cox.fit)
+
+
+# LRT
+cox_restr1 <- coxph(Surv(duration, cens == 0, type = "right") ~ log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + doorstep + favday, data = relay)
+lrtest(cox_restr1, cox.fit) ## esent is significant.
+
+cox_restr2 <- coxph(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1)+ refill + doorstep + favday, data = relay)
+lrtest(cox_restr2, cox.fit) ## paperless is significant.
+
+cox_restr3 <- coxph(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + doorstep + favday, data = relay)
+lrtest(cox_restr3, cox.fit) ## refill is significant.
+
+cox_restr4 <- coxph(Surv(duration, cens == 0, type = "right") ~ esent + log(eopenrate + 1) + log(eclickrate + 1) + log(avgorder + 1) + log(ordfreq + 1) + paperless + refill + favday, data = relay)
+lrtest(cox_restr4, cox.fit) ## doorstep is not significant.
+```
+
+
+
+
